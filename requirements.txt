@@ -1,10 +1,11 @@
 streamlit
 pandas
 numpy
+requests
 plotly
 ta
 prophet
-tensorflow
 scikit-learn
-requests
+tensorflow
+
 
