@@ -181,17 +181,23 @@ if submit_button:
         df = add_indicators(df)
         st.session_state['dfs'][s] = df
 
-# --- PORÓWNANIE ---
+# --- PORÓWNANIE W KAFELKACH ---
 st.subheader("📊 Porównanie kryptowalut")
-cols = st.columns(len(cryptos))
-for idx, s in enumerate(cryptos):
-    if s not in st.session_state['dfs'] or st.session_state['dfs'][s].empty:
-        continue
-    df = st.session_state['dfs'][s]
-    with cols[idx % len(cols)]:
-        st.markdown(f"### {s}")
-        st.line_chart(df['Close'], use_container_width=True)
-        st.write(f"**Sygnał:** {generate_signal(df)}")
+if cryptos:
+    max_cols_per_row = 3
+    for i in range(0, len(cryptos), max_cols_per_row):
+        row_cryptos = cryptos[i:i+max_cols_per_row]
+        cols = st.columns(len(row_cryptos))
+        for col, sym in zip(cols, row_cryptos):
+            if sym not in st.session_state['dfs'] or st.session_state['dfs'][sym].empty:
+                continue
+            df = st.session_state['dfs'][sym]
+            with col:
+                st.markdown(f"### {sym}")
+                st.line_chart(df['Close'], use_container_width=True)
+                st.write(f"**Sygnał:** {generate_signal(df)}")
+else:
+    st.info("⚠️ Wybierz przynajmniej jedną kryptowalutę")
 
 # --- SZCZEGÓŁY ---
 days = st.slider("Dni do prognozy", 7, 180, 30)
@@ -209,7 +215,6 @@ for s in cryptos:
         fig.add_trace(go.Scatter(x=df.index, y=df['BB_low'], name='BB Low', line=dict(dash='dot')))
         st.plotly_chart(fig, use_container_width=True)
 
-        # Prognozy
         lr = linear_prediction(df, days)
         if not lr.empty:
             st.line_chart(lr.set_index('Date')['Predicted'])
