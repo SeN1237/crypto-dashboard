@@ -13,27 +13,44 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 
+# --- USTAWIENIA STRONY ---
 st.set_page_config(layout="wide")
 st.title("📊 Profesjonalny Dashboard Kryptowalut")
 
-# --- CACHE SYMBOLI ---
+# --- WYBÓR ŹRÓDŁA DANYCH ---
+source = st.radio(
+    "📡 Wybierz źródło danych:",
+    ["Binance", "CoinGecko"],
+    horizontal=True
+)
+
+# --- POBIERANIE SYMBOLI ---
 @st.cache_data(ttl=3600)
-def get_all_symbols():
-    """Pobiera symbole z Binance, a jak się nie uda, korzysta z fallback listy."""
-    fallback = ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","DOTUSDT","AVAXUSDT"]
+def get_all_symbols(source):
+    """Pobiera listę kryptowalut z Binance lub CoinGecko"""
+    if source == "Binance":
+        try:
+            url = "https://api.binanceproxy.net/api/v3/exchangeInfo"  # proxy omija 451
+            r = requests.get(url, timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            if "symbols" in data:
+                return sorted([s["symbol"] for s in data["symbols"] if s["status"] == "TRADING"])
+        except Exception as e:
+            st.warning(f"❌ Błąd Binance: {e}")
+            source = "CoinGecko"  # fallback
     try:
-        r = requests.get("https://api.binance.com/api/v3/exchangeInfo", timeout=10)
+        url = "https://api.coingecko.com/api/v3/coins/list"
+        r = requests.get(url, timeout=10)
         r.raise_for_status()
         data = r.json()
-        if "symbols" in data:
-            return [s["symbol"] for s in data["symbols"] if s["status"] == "TRADING"]
-        else:
-            return fallback
+        symbols = [item['symbol'].upper() + "USDT" for item in data if 'symbol' in item][:500]
+        return sorted(list(set(symbols)))
     except Exception as e:
-        st.warning(f"Błąd podczas pobierania symboli: {e}")
-        return fallback
+        st.error(f"❌ Błąd CoinGecko: {e}")
+        return ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
 
-symbols_list = get_all_symbols()
+symbols_list = get_all_symbols(source)
 
 # --- SESSION STATE ---
 if 'dfs' not in st.session_state:
@@ -45,34 +62,39 @@ with st.form(key='crypto_form'):
     submit_button = st.form_submit_button("Załaduj dane")
 
 # --- POBIERANIE DANYCH ---
-def get_data(symbol, limit=365):
-    """Pobiera dane z Binance, a jak się nie uda — z CoinGecko."""
-    try:
-        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1d&limit={limit}"
-        data = requests.get(url, timeout=10).json()
-        df = pd.DataFrame(data, columns=[
-            'Open time','Open','High','Low','Close','Volume','Close time',
-            'Quote asset volume','Trades','Taker buy base','Taker buy quote','Ignore'
-        ])
-        df['Close'] = df['Close'].astype(float)
-        df['Open time'] = pd.to_datetime(df['Open time'], unit='ms')
-        df.set_index('Open time', inplace=True)
-        return df
-    except Exception:
-        st.warning(f"Nie udało się pobrać {symbol} z Binance — próbuję z CoinGecko...")
-        cg_id = symbol.replace("USDT", "").lower()
+def get_data(symbol, source="Binance", limit=365):
+    """Pobiera dane z Binance lub CoinGecko"""
+    if source == "Binance":
         try:
-            r = requests.get(f"https://api.coingecko.com/api/v3/coins/{cg_id}/market_chart?vs_currency=usd&days=365")
-            prices = r.json()['prices']
-            df = pd.DataFrame(prices, columns=['time','Close'])
-            df['Open time'] = pd.to_datetime(df['time'], unit='ms')
+            url = f"https://api.binanceproxy.net/api/v3/klines?symbol={symbol}&interval=1d&limit={limit}"
+            data = requests.get(url, timeout=10).json()
+            df = pd.DataFrame(data, columns=[
+                'Open time','Open','High','Low','Close','Volume','Close time',
+                'Quote asset volume','Trades','Taker buy base','Taker buy quote','Ignore'
+            ])
+            df['Close'] = df['Close'].astype(float)
+            df['Open time'] = pd.to_datetime(df['Open time'], unit='ms')
             df.set_index('Open time', inplace=True)
             return df
         except Exception as e:
-            st.error(f"Błąd pobierania danych z CoinGecko: {e}")
-            return pd.DataFrame()
+            st.warning(f"⚠️ Binance error: {e}. Przełączam na CoinGecko...")
+            source = "CoinGecko"
 
-# --- WSZYSTKIE WSKAŹNIKI ---
+    # Fallback do CoinGecko
+    try:
+        cg_id = symbol.replace("USDT", "").lower()
+        url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/market_chart?vs_currency=usd&days=365"
+        r = requests.get(url, timeout=10)
+        data = r.json()['prices']
+        df = pd.DataFrame(data, columns=['time','Close'])
+        df['Open time'] = pd.to_datetime(df['time'], unit='ms')
+        df.set_index('Open time', inplace=True)
+        return df
+    except Exception as e:
+        st.error(f"❌ CoinGecko error for {symbol}: {e}")
+        return pd.DataFrame()
+
+# --- WSKAŹNIKI TECHNICZNE ---
 def add_indicators(df):
     if df.empty: return df
     df['SMA20'] = SMAIndicator(df['Close'], 20).sma_indicator()
@@ -86,10 +108,9 @@ def add_indicators(df):
     df['BB_low'] = bb.bollinger_lband()
     return df
 
-# --- PROGNOZY ---
+# --- PREDYKCJE ---
 def linear_prediction(df, days=30):
-    if len(df) < 10:
-        return pd.DataFrame()
+    if len(df) < 10: return pd.DataFrame()
     df = df.reset_index()
     df['t'] = np.arange(len(df))
     X = df[['t']].values
@@ -136,7 +157,7 @@ def lstm_prediction(df, days=30):
     future_dates = pd.date_range(df.index[-1], periods=days+1, freq='D')[1:]
     return pd.DataFrame({'Date': future_dates, 'LSTM': preds.flatten()})
 
-# --- SYGNAŁ ---
+# --- SYGNAŁ INWESTYCYJNY ---
 def generate_signal(df):
     if df.empty: return "Brak danych"
     last = df.iloc[-1]
@@ -152,7 +173,7 @@ def generate_signal(df):
 # --- ZAŁADUJ DANE ---
 if submit_button:
     for s in cryptos:
-        df = get_data(s)
+        df = get_data(s, source)
         df = add_indicators(df)
         st.session_state['dfs'][s] = df
 
@@ -163,9 +184,10 @@ for s in cryptos:
     if s in st.session_state['dfs'] and not st.session_state['dfs'][s].empty:
         df = st.session_state['dfs'][s]
         fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name=s))
+fig.update_layout(height=500, margin=dict(l=10, r=10, t=30, b=10))
 st.plotly_chart(fig, use_container_width=True)
 
-# --- SZCZEGÓŁY ---
+# --- SZCZEGÓŁOWA ANALIZA ---
 days = st.slider("Dni do prognozy", 7, 180, 30)
 for s in cryptos:
     if s not in st.session_state['dfs'] or st.session_state['dfs'][s].empty:
@@ -177,6 +199,8 @@ for s in cryptos:
         fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name='Close'))
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA20'], name='SMA20'))
         fig.add_trace(go.Scatter(x=df.index, y=df['EMA20'], name='EMA20'))
+        fig.add_trace(go.Scatter(x=df.index, y=df['BB_high'], name='BB High', line=dict(dash='dot')))
+        fig.add_trace(go.Scatter(x=df.index, y=df['BB_low'], name='BB Low', line=dict(dash='dot')))
         st.plotly_chart(fig, use_container_width=True)
 
         st.write("**Prognozy:**")
