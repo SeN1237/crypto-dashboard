@@ -16,15 +16,24 @@ from tensorflow.keras.layers import LSTM, Dense
 st.set_page_config(layout="wide")
 st.title("Profesjonalny Dashboard Kryptowalut - Optymalizacja Session State 🚀")
 
-# --- Pobranie wszystkich symboli Binance ---
 @st.cache_data(ttl=3600)
 def get_all_symbols():
     url = "https://api.binance.com/api/v3/exchangeInfo"
-    data = requests.get(url).json()
-    symbols = [item['symbol'] for item in data['symbols'] if item['status']=='TRADING']
-    return symbols
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if "symbols" in data:
+            symbols = [item['symbol'] for item in data['symbols'] if item.get('status') == 'TRADING']
+            return symbols
+        else:
+            st.warning("Nie udało się pobrać symboli z Binance. Spróbuj ponownie później.")
+            return ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+    except Exception as e:
+        st.error(f"Błąd podczas pobierania symboli: {e}")
+        # Lista zapasowa
+        return ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
 
-symbols_list = get_all_symbols()
 
 # --- Inicjalizacja session_state dla danych ---
 if 'dfs' not in st.session_state:
