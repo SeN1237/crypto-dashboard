@@ -18,21 +18,56 @@ st.title("Profesjonalny Dashboard Kryptowalut - Optymalizacja Session State 🚀
 
 @st.cache_data(ttl=3600)
 def get_all_symbols():
+    """
+    Pobiera wszystkie dostępne symbole z Binance.
+    W razie błędu zwraca lokalną listę 200+ popularnych kryptowalut (fallback).
+    """
     url = "https://api.binance.com/api/v3/exchangeInfo"
+
+    # ✅ Lokalna lista awaryjna — 200+ popularnych symboli
+    fallback_symbols = [
+        "BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","AVAXUSDT","DOTUSDT","LINKUSDT",
+        "MATICUSDT","LTCUSDT","SHIBUSDT","BCHUSDT","ATOMUSDT","FILUSDT","UNIUSDT","INJUSDT","OPUSDT","APTUSDT",
+        "ARBUSDT","NEARUSDT","ETCUSDT","AAVEUSDT","SANDUSDT","RUNEUSDT","IMXUSDT","EGLDUSDT","VETUSDT","THETAUSDT",
+        "FLOWUSDT","GALAUSDT","ICPUSDT","AXSUSDT","KAVAUSDT","STXUSDT","HBARUSDT","MANAUSDT","CHZUSDT","CRVUSDT",
+        "SNXUSDT","DYDXUSDT","PEPEUSDT","SEIUSDT","BLURUSDT","FTMUSDT","COMPUSDT","ENSUSDT","WLDUSDT","XMRUSDT",
+        "ALGOUSDT","GMXUSDT","GRTUSDT","QNTUSDT","SUIUSDT","ROSEUSDT","MINAUSDT","CFXUSDT","1INCHUSDT","DASHUSDT",
+        "ZECUSDT","LRCUSDT","KSMUSDT","NEOUSDT","CELOUSDT","HOTUSDT","OCEANUSDT","RLCUSDT","BANDUSDT","HNTUSDT",
+        "BALUSDT","CHRUSDT","YFIUSDT","CELRUSDT","XEMUSDT","BATUSDT","COTIUSDT","ZILUSDT","TRXUSDT","IOSTUSDT",
+        "QTUMUSDT","FTTUSDT","BNXUSDT","SKLUSDT","XLMUSDT","BATUSDT","ENJUSDT","ANKRUSDT","NKNUSDT","OMGUSDT",
+        "ICXUSDT","RSRUSDT","RVNUSDT","ONTUSDT","WAVESUSDT","ARUSDT","STORJUSDT","MASKUSDT","SPELLUSDT","ILVUSDT",
+        "C98USDT","AUDIOUSDT","KDAUSDT","NMRUSDT","OGNUSDT","GLMRUSDT","SFPUSDT","LDOUSDT","MAGICUSDT","CAKEUSDT",
+        "BICOUSDT","ALPHAUSDT","ACHUSDT","XECUSDT","DENTUSDT","DARUSDT","BTTUSDT","PYRUSDT","ATAUSDT","GALUSDT",
+        "FXSUSDT","JOEUSDT","MOVRUSDT","AKROUSDT","SRMUSDT","FLUXUSDT","TRBUSDT","REEFUSDT","CTSIUSDT","PUNDIXUSDT",
+        "KLAYUSDT","BAKEUSDT","API3USDT","MTLUSDT","SXPUSDT","JASMYUSDT","CKBUSDT","VTHOUSDT","WINUSDT","SYSUSDT",
+        "TWTUSDT","FORTHUSDT","CEEKUSDT","CVCUSDT","XVGUSDT","PHAUSDT","BNXUSDT","VOXELUSDT","PROMUSDT","SUPERUSDT",
+        "BETAUSDT","DEGOUSDT","HIGHUSDT","AERGOUSDT","ARPAUSDT","TVKUSDT","MBOXUSDT","LITUSDT","BELUSDT","SANTOSUSDT",
+        "PORTOUSDT","BARUSDT","LAZIOUSDT","PSGUSDT","CITYUSDT","ATMUSDT","ACMUSDT","ASRUSDT","OGUSDT","ALPINEUSDT",
+        "MOBUSDT","BONDUSDT","CTKUSDT","FIROUSDT","DODOUSDT","MIRUSDT","ERNUSDT","PERPUSDT","POLSUSDT","ADXUSDT",
+        "MDTUSDT","DATAUSDT","KEYUSDT","AUTOUSDT","TOMOUSDT","HIVEUSDT","SCUSDT","WRXUSDT","DCRUSDT","BTSUSDT"
+    ]
+
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         data = response.json()
-        if "symbols" in data:
-            symbols = [item['symbol'] for item in data['symbols'] if item.get('status') == 'TRADING']
-            return symbols
+
+        # Jeśli Binance zwraca poprawny JSON
+        if "symbols" in data and isinstance(data["symbols"], list):
+            symbols = [item["symbol"] for item in data["symbols"] if item.get("status") == "TRADING"]
+            if len(symbols) > 10:
+                return symbols
+            else:
+                st.warning("Zwrócono mało symboli z Binance — użyto lokalnej listy.")
+                return fallback_symbols
         else:
-            st.warning("Nie udało się pobrać symboli z Binance. Spróbuj ponownie później.")
-            return ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+            st.warning("Brak pola 'symbols' w odpowiedzi API Binance — użyto lokalnej listy.")
+            return fallback_symbols
+
     except Exception as e:
-        st.error(f"Błąd podczas pobierania symboli: {e}")
-        # Lista zapasowa
-        return ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
+        st.error(f"Błąd podczas pobierania symboli z Binance: {e}")
+        return fallback_symbols
+
 
 
 # --- Inicjalizacja session_state dla danych ---
